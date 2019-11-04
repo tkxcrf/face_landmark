@@ -184,19 +184,32 @@ class Shufflenet(tf.keras.Model):
                                      repeat=4,
                                      kernel_initializer=kernel_initializer)
         self.block2=ShufflenetBlock(self.initial_depth*2,
-                                     repeat=8,
+                                     repeat=4,
                                      kernel_initializer=kernel_initializer)
-        self.block3 = ShufflenetBlock(self.initial_depth * 2 *2,
+        self.block3 = ShufflenetBlock(self.initial_depth * 2,
                                       repeat=4,
                                       kernel_initializer=kernel_initializer)
 
+        self.final_conv= tf.keras.Sequential(
+                                            [tf.keras.layers.SeparableConv2D(256,
+                                                                    kernel_size=(3, 3),
+                                                                    strides=2,
+                                                                    padding='same',
+                                                                    use_bias=False,
+                                                                    kernel_initializer=kernel_initializer),
+
+                                             tf.keras.layers.SeparableConv2D(256,
+                                                                    kernel_size=(3, 3),
+                                                                    strides=1,
+                                                                    padding='valid',
+                                                                    use_bias=False,
+                                                                    kernel_initializer=kernel_initializer)
+                                              ])
 
     def call(self, inputs, training=False):
 
 
         x=self.first_conv(inputs,training=training)
-
-
 
         x1=self.block1(x,training=training)
 
@@ -206,9 +219,9 @@ class Shufflenet(tf.keras.Model):
 
         x3=self.block3(x2, training=training)
 
+        x4 = self.final_conv(x3, training=training)
 
-
-        return x1,x2,x3
+        return x1,x2,x3,x4
 
 
 

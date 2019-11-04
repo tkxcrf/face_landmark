@@ -9,11 +9,11 @@ import numpy as np
 from train_config import config as cfg
 
 from lib.core.model.shufflenet.shufflenet import Shufflenet
-class SimpleFaceHead(tf.keras.Model):
+class SimpleFaceHeadKeypoints(tf.keras.Model):
     def __init__(self,
-                 output_size,
+                 output_size=136,
                  kernel_initializer='glorot_normal'):
-        super(SimpleFaceHead, self).__init__()
+        super(SimpleFaceHeadKeypoints, self).__init__()
 
         self.output_size=output_size
 
@@ -23,9 +23,84 @@ class SimpleFaceHead(tf.keras.Model):
 
     def call(self, inputs):
 
-        output=self.dense(inputs)
+        keypoints=self.dense(inputs)
 
-        return output
+        return keypoints
+
+
+class SimpleFaceHeadCls(tf.keras.Model):
+    def __init__(self,
+                 output_size=4,
+                 kernel_initializer='glorot_normal'):
+        super(SimpleFaceHeadCls, self).__init__()
+
+        self.output_size = output_size
+
+        self.conv1 = tf.keras.layers.Conv2D(256,
+                                            kernel_size=(3, 3),
+                                            strides=2,
+                                            padding='same',
+                                            use_bias=False,
+                                            kernel_initializer=kernel_initializer)
+        self.conv2 = tf.keras.layers.Conv2D(256,
+                                            kernel_size=(3, 3),
+                                            strides=2,
+                                            padding='same',
+                                            use_bias=False,
+                                            kernel_initializer=kernel_initializer)
+
+        self.conv3 = tf.keras.layers.Conv2D(self.output_size,
+                                            kernel_size=(3, 3),
+                                            strides=1,
+                                            padding='valid',
+                                            use_bias=False,
+                                            kernel_initializer=kernel_initializer)
+
+    def call(self, inputs):
+        x1 = self.conv1(inputs)
+        x2 = self.conv2(x1)
+        Cls = self.conv3(x2)
+
+        Cls = tf.squeeze(Cls, axis=[1, 2])
+        return Cls
+
+class SimpleFaceHeadPose(tf.keras.Model):
+    def __init__(self,
+                 output_size=3,
+                 kernel_initializer='glorot_normal'):
+        super(SimpleFaceHeadPose, self).__init__()
+
+        self.output_size = output_size
+
+        self.conv1=tf.keras.layers.Conv2D(256,
+                                       kernel_size=(3, 3),
+                                       strides=2,
+                                       padding='same',
+                                       use_bias=False,
+                                       kernel_initializer=kernel_initializer)
+        self.conv2=tf.keras.layers.Conv2D(256,
+                                       kernel_size=(3, 3),
+                                       strides=2,
+                                       padding='same',
+                                       use_bias=False,
+                                       kernel_initializer=kernel_initializer)
+
+        self.conv3 = tf.keras.layers.Conv2D(self.output_size,
+                                            kernel_size=(3, 3),
+                                            strides=1,
+                                            padding='valid',
+                                            use_bias=False,
+                                            kernel_initializer=kernel_initializer)
+
+
+    def call(self, inputs):
+        x1 = self.conv1(inputs)
+        x2 = self.conv2(x1)
+        PRY = self.conv3(x2)
+
+
+        PRY=tf.squeeze(PRY,axis=[1,2])
+        return PRY
 
 
 class SimpleFace(tf.keras.Model):
@@ -37,8 +112,9 @@ class SimpleFace(tf.keras.Model):
         self.backbone = Shufflenet(model_size=model_size,
                                    kernel_initializer=kernel_initializer)
 
-        self.head=SimpleFaceHead(output_size=cfg.MODEL.out_channel,
-                                 kernel_initializer=kernel_initializer)
+        self.head_keypoints=SimpleFaceHeadKeypoints(kernel_initializer=kernel_initializer)
+        self.head_pose = SimpleFaceHeadPose(kernel_initializer=kernel_initializer)
+        self.head_cls = SimpleFaceHeadCls(kernel_initializer=kernel_initializer)
 
         self.pool1 = tf.keras.layers.GlobalAveragePooling2D()
         self.pool2 = tf.keras.layers.GlobalAveragePooling2D()
@@ -48,43 +124,42 @@ class SimpleFace(tf.keras.Model):
     @tf.function
     def call(self, inputs, training=False):
         inputs=self.preprocess(inputs)
-        x1, x2, x3 = self.backbone(inputs, training=training)
+        x1, x2, x3,x4 = self.backbone(inputs, training=training)
 
-        s1 = self.pool1(x1)
-        s2 = self.pool2(x2)
-        s3 = self.pool3(x3)
 
-        multi_scale = tf.concat([s1, s2, s3], 1)
+        s2 = self.pool1(x2)
+        s3 = self.pool2(x3)
+        s4 = self.pool3(x4)
 
-        out_put=self.head(multi_scale,training=training)
+        multi_scale = tf.concat([s2, s3, s4], 1)
 
-        return out_put
+        keypoints_predict=self.head_keypoints(multi_scale,training=training)
+
+        head_pose_predict=self.head_pose(x2,training=training)
+
+        head_cls_predict = self.head_cls(x2, training=training)
+
+        res=tf.concat([keypoints_predict,head_pose_predict,head_cls_predict],axis=1)
+
+        return res
 
 
 
     @tf.function(input_signature=[tf.TensorSpec([None,cfg.MODEL.hin,cfg.MODEL.win,3], tf.float32)])
     def inference(self,images):
         inputs = self.preprocess(images)
-        x1,x2,x3 = self.backbone(inputs, training=False)
+        x1,x2,x3,x4 = self.backbone(inputs, training=False)
+        print(x4)
+        s2 = self.pool1(x2)
+        s3 = self.pool2(x3)
+        s4 = self.pool3(x4)
 
-        s1 = self.pool1(x1)
-        s2 = self.pool2(x2)
-        s3 = self.pool3(x3)
+        multi_scale = tf.concat([s2, s3, s4], 1)
 
-        multi_scale = tf.concat([s1, s2, s3], 1)
-
-        out_put = self.head(multi_scale, training=False)
+        keypoints_predict = self.head_keypoints(multi_scale, training=False)
 
 
-        landmark=out_put[:,:136]
-        headpose=out_put[:,136:139]
-        cls=out_put[:,139:]
-
-        res={'landmark':landmark,
-             'headpose':headpose,
-             'cls':cls}
-
-        return res
+        return keypoints_predict
 
 
 
@@ -110,7 +185,7 @@ if __name__=='__main__':
 
     image=np.zeros(shape=(1,160,160,3),dtype=np.float32)
     x=model.inference(image)
-    tf.saved_model.save(model,'./model/keypoints')
+    #tf.saved_model.save(model,'./model/keypoints')
     start=time.time()
     for i in range(100):
         x = model.inference(image)
@@ -172,20 +247,9 @@ def calculate_loss(predict_keypoints, label_keypoints):
     big_mouth_cls_predict = predict_keypoints[:, 142]
 
 
-
-
-
-
-
-
-
-
-
     loss = _wing_loss(landmark_predict, landmark_label)
 
     loss_pose = _mse(pose_predict, pose_label)
-
-
 
     leye_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=leye_cls_predict,
                                                                       labels=leye_cls_label) )
@@ -196,37 +260,6 @@ def calculate_loss(predict_keypoints, label_keypoints):
     mouth_loss_big = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=big_mouth_cls_predict,
                                                                         labels=big_mouth_cls_label))
     mouth_loss=mouth_loss+mouth_loss_big
-
-
-
-
-
-    # ##make crosssentropy
-    # leye_cla_correct_prediction = tf.equal(
-    #     tf.cast(tf.greater_equal(tf.nn.sigmoid(leye_cls_predict), 0.5), tf.int32),
-    #     tf.cast(leye_cla_label, tf.int32))
-    # leye_cla_accuracy = tf.reduce_mean(tf.cast(leye_cla_correct_prediction, tf.float32))
-    #
-    # reye_cla_correct_prediction = tf.equal(
-    #     tf.cast(tf.greater_equal(tf.nn.sigmoid(reye_cla_predict), 0.5), tf.int32),
-    #     tf.cast(reye_cla_label, tf.int32))
-    # reye_cla_accuracy = tf.reduce_mean(tf.cast(reye_cla_correct_prediction, tf.float32))
-    # mouth_cla_correct_prediction = tf.equal(
-    #     tf.cast(tf.greater_equal(tf.nn.sigmoid(mouth_cla_predict), 0.5), tf.int32),
-    #     tf.cast(mouth_cla_label, tf.int32))
-    # mouth_cla_accuracy = tf.reduce_mean(tf.cast(mouth_cla_correct_prediction, tf.float32))
-
-
-
-    #### l2 regularization_losses
-    # l2_loss = []
-    # l2_reg = tf.keras.regularizers.l2(cfg.TRAIN.weight_decay_factor)
-    # variables_restore = tf.get_collection(tf.GraphKeys.MODEL_VARIABLES)
-    # for var in variables_restore:
-    #     if 'weight' in var.name:
-    #         l2_loss.append(l2_reg(var))
-    # regularization_losses = tf.add_n(l2_loss, name='l1_loss')
-
 
     return loss+loss_pose+leye_loss+reye_loss+mouth_loss
 
