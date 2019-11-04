@@ -9,6 +9,14 @@ import numpy as np
 from train_config import config as cfg
 
 from lib.core.model.shufflenet.shufflenet import Shufflenet
+
+
+
+
+def batch_norm():
+    return tf.keras.layers.BatchNormalization(fused=True,
+                                              momentum=0.997,
+                                              epsilon=1e-5)
 class SimpleFaceHeadKeypoints(tf.keras.Model):
     def __init__(self,
                  output_size=136,
@@ -36,31 +44,34 @@ class SimpleFaceHeadCls(tf.keras.Model):
 
         self.output_size = output_size
 
-        self.conv1 = tf.keras.layers.Conv2D(256,
-                                            kernel_size=(3, 3),
-                                            strides=2,
-                                            padding='same',
-                                            use_bias=False,
-                                            kernel_initializer=kernel_initializer)
-        self.conv2 = tf.keras.layers.Conv2D(256,
-                                            kernel_size=(3, 3),
-                                            strides=2,
-                                            padding='same',
-                                            use_bias=False,
-                                            kernel_initializer=kernel_initializer)
+        self.conv = tf.keras.Sequential(
+            [tf.keras.layers.Conv2D(256,
+                                    kernel_size=(3, 3),
+                                    strides=2,
+                                    padding='same',
+                                    use_bias=False,
+                                    kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+             tf.keras.layers.Conv2D(256,
+                                    kernel_size=(3, 3),
+                                    strides=2,
+                                    padding='same',
+                                    use_bias=False,
+                                    kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+             tf.keras.layers.Conv2D(self.output_size,
+                                    kernel_size=(3, 3),
+                                    strides=1,
+                                    padding='valid',
+                                    use_bias=True,
+                                    kernel_initializer=kernel_initializer)
 
-        self.conv3 = tf.keras.layers.Conv2D(self.output_size,
-                                            kernel_size=(3, 3),
-                                            strides=1,
-                                            padding='valid',
-                                            use_bias=False,
-                                            kernel_initializer=kernel_initializer)
+             ])
 
     def call(self, inputs):
-        x1 = self.conv1(inputs)
-        x2 = self.conv2(x1)
-        Cls = self.conv3(x2)
-
+        Cls = self.conv(inputs)
         Cls = tf.squeeze(Cls, axis=[1, 2])
         return Cls
 
@@ -72,31 +83,39 @@ class SimpleFaceHeadPose(tf.keras.Model):
 
         self.output_size = output_size
 
-        self.conv1=tf.keras.layers.Conv2D(256,
-                                       kernel_size=(3, 3),
-                                       strides=2,
-                                       padding='same',
-                                       use_bias=False,
-                                       kernel_initializer=kernel_initializer)
-        self.conv2=tf.keras.layers.Conv2D(256,
-                                       kernel_size=(3, 3),
-                                       strides=2,
-                                       padding='same',
-                                       use_bias=False,
-                                       kernel_initializer=kernel_initializer)
 
-        self.conv3 = tf.keras.layers.Conv2D(self.output_size,
-                                            kernel_size=(3, 3),
-                                            strides=1,
-                                            padding='valid',
-                                            use_bias=False,
-                                            kernel_initializer=kernel_initializer)
+
+        self.conv=tf.keras.Sequential(
+            [tf.keras.layers.Conv2D(256,
+                                    kernel_size=(3, 3),
+                                    strides=2,
+                                    padding='same',
+                                    use_bias=False,
+                                    kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+             tf.keras.layers.Conv2D(256,
+                                kernel_size=(3, 3),
+                                strides=2,
+                                padding='same',
+                                use_bias=False,
+                                kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+             tf.keras.layers.Conv2D(self.output_size,
+                                kernel_size=(3, 3),
+                                strides=1,
+                                padding='valid',
+                                use_bias=True,
+                                kernel_initializer=kernel_initializer)
+
+            ])
+
 
 
     def call(self, inputs):
-        x1 = self.conv1(inputs)
-        x2 = self.conv2(x1)
-        PRY = self.conv3(x2)
+
+        PRY = self.conv(inputs)
 
 
         PRY=tf.squeeze(PRY,axis=[1,2])
