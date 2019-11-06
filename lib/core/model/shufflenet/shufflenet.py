@@ -190,22 +190,6 @@ class Shufflenet(tf.keras.Model):
                                       repeat=4,
                                       kernel_initializer=kernel_initializer)
 
-        self.final_conv= tf.keras.Sequential(
-                                            [tf.keras.layers.SeparableConv2D(256,
-                                                                    kernel_size=(3, 3),
-                                                                    strides=2,
-                                                                    padding='same',
-                                                                    use_bias=False,
-                                                                    kernel_initializer=kernel_initializer),
-
-                                             tf.keras.layers.SeparableConv2D(256,
-                                                                    kernel_size=(3, 3),
-                                                                    strides=1,
-                                                                    padding='valid',
-                                                                    use_bias=False,
-                                                                    kernel_initializer=kernel_initializer)
-                                              ])
-
     def call(self, inputs, training=False):
 
 
@@ -213,15 +197,11 @@ class Shufflenet(tf.keras.Model):
 
         x1=self.block1(x,training=training)
 
-
         x2=self.block2(x1, training=training)
-
 
         x3=self.block3(x2, training=training)
 
-        x4 = self.final_conv(x3, training=training)
-
-        return x1,x2,x3,x4
+        return x1,x2,x3
 
 
 

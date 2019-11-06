@@ -19,61 +19,36 @@ def batch_norm():
                                               epsilon=1e-5)
 class SimpleFaceHeadKeypoints(tf.keras.Model):
     def __init__(self,
-                 output_size=136,
+                 output_size=136-22-22,
                  kernel_initializer='glorot_normal'):
         super(SimpleFaceHeadKeypoints, self).__init__()
 
         self.output_size=output_size
 
-        self.dense=tf.keras.layers.Dense(self.output_size,
+        self.profile=tf.keras.layers.Dense(34,
                                          use_bias=True,
                                          kernel_initializer=kernel_initializer )
 
-    def call(self, inputs):
+        self.noses = tf.keras.layers.Dense(18,
+                                           use_bias=True,
+                                           kernel_initializer=kernel_initializer)
 
-        keypoints=self.dense(inputs)
+        self.mouth = tf.keras.layers.Dense(40,
+                                           use_bias=True,
+                                           kernel_initializer=kernel_initializer)
+        self.cls=tf.keras.layers.Dense(2,
+                                           use_bias=True,
+                                           kernel_initializer=kernel_initializer)
 
-        return keypoints
 
+    def call(self, inputs,training):
 
-class SimpleFaceHeadCls(tf.keras.Model):
-    def __init__(self,
-                 output_size=4,
-                 kernel_initializer='glorot_normal'):
-        super(SimpleFaceHeadCls, self).__init__()
+        kp_profile=self.profile(inputs,training=training)
+        kp_nose = self.noses(inputs,training=training)
+        kp_mouth = self.mouth(inputs, training=training)
+        cls = self.cls(inputs,training=training)
+        return kp_profile,kp_nose,kp_mouth,cls
 
-        self.output_size = output_size
-
-        self.conv = tf.keras.Sequential(
-            [tf.keras.layers.Conv2D(256,
-                                    kernel_size=(3, 3),
-                                    strides=2,
-                                    padding='same',
-                                    use_bias=False,
-                                    kernel_initializer=kernel_initializer),
-             batch_norm(),
-             tf.keras.layers.ReLU(),
-             tf.keras.layers.Conv2D(256,
-                                    kernel_size=(3, 3),
-                                    strides=2,
-                                    padding='same',
-                                    use_bias=False,
-                                    kernel_initializer=kernel_initializer),
-             batch_norm(),
-             tf.keras.layers.ReLU(),
-             tf.keras.layers.Conv2D(self.output_size,
-                                    kernel_size=(3, 3),
-                                    strides=1,
-                                    padding='valid',
-                                    use_bias=True,
-                                    kernel_initializer=kernel_initializer)
-
-             ])
-
-    def call(self, inputs):
-        Cls = self.conv(inputs)
-        Cls = tf.squeeze(Cls, axis=[1, 2])
-        return Cls
 
 class SimpleFaceHeadPose(tf.keras.Model):
     def __init__(self,
@@ -113,13 +88,72 @@ class SimpleFaceHeadPose(tf.keras.Model):
 
 
 
-    def call(self, inputs):
+    def call(self, inputs,training):
 
-        PRY = self.conv(inputs)
-
+        PRY = self.conv(inputs,training=training)
 
         PRY=tf.squeeze(PRY,axis=[1,2])
         return PRY
+
+class OneEye(tf.keras.Model):
+    def __init__(self,
+                 output_size=23,
+                 kernel_initializer='glorot_normal'):
+        super(OneEye, self).__init__()
+
+        self.output_size=output_size
+
+        self.conv = tf.keras.Sequential(
+            [tf.keras.layers.SeparableConv2D(256,
+                                    kernel_size=(3, 3),
+                                    strides=2,
+                                    padding='same',
+                                    use_bias=False,
+                                    kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+             tf.keras.layers.SeparableConv2D(256,
+                                    kernel_size=(3, 3),
+                                    strides=2,
+                                    padding='same',
+                                    use_bias=False,
+                                    kernel_initializer=kernel_initializer),
+             batch_norm(),
+             tf.keras.layers.ReLU(),
+
+
+             ])
+
+        self.kp_eyebow=tf.keras.layers.Conv2D(10,
+                               kernel_size=(3, 3),
+                               strides=1,
+                               padding='valid',
+                               use_bias=True,
+                               kernel_initializer=kernel_initializer)
+        self.kp_eye = tf.keras.layers.Conv2D(12,
+                                                kernel_size=(3, 3),
+                                                strides=1,
+                                                padding='valid',
+                                                use_bias=True,
+                                                kernel_initializer=kernel_initializer)
+
+        self.cls = tf.keras.layers.Conv2D(1,
+                                         kernel_size=(3, 3),
+                                         strides=1,
+                                         padding='valid',
+                                         use_bias=True,
+                                         kernel_initializer=kernel_initializer)
+
+    def call(self, inputs,training):
+
+        fm=self.conv(inputs,training=training)
+
+        eyebow=tf.squeeze(self.kp_eyebow(fm,training=training),axis=[1,2])
+        eye = tf.squeeze(self.kp_eye(fm, training=training),axis=[1,2])
+        cls=tf.squeeze(self.cls(fm,training=training),axis=[1,2])
+        return eyebow,eye,cls
+
+
 
 
 class SimpleFace(tf.keras.Model):
@@ -131,56 +165,81 @@ class SimpleFace(tf.keras.Model):
         self.backbone = Shufflenet(model_size=model_size,
                                    kernel_initializer=kernel_initializer)
 
-        self.head_keypoints=SimpleFaceHeadKeypoints(kernel_initializer=kernel_initializer)
-        self.head_pose = SimpleFaceHeadPose(kernel_initializer=kernel_initializer)
-        self.head_cls = SimpleFaceHeadCls(kernel_initializer=kernel_initializer)
+
 
         self.pool1 = tf.keras.layers.GlobalAveragePooling2D()
         self.pool2 = tf.keras.layers.GlobalAveragePooling2D()
         self.pool3 = tf.keras.layers.GlobalAveragePooling2D()
 
+        self.head_keypoints = SimpleFaceHeadKeypoints(kernel_initializer=kernel_initializer)
+
+        self.head_pose = SimpleFaceHeadPose(kernel_initializer=kernel_initializer)
+
+
+        self.left_eye=OneEye(kernel_initializer=kernel_initializer)
+
+        self.right_eye = OneEye(kernel_initializer=kernel_initializer)
+
 
     @tf.function
     def call(self, inputs, training=False):
         inputs=self.preprocess(inputs)
-        x1, x2, x3,x4 = self.backbone(inputs, training=training)
+        x1, x2, x3 = self.backbone(inputs, training=training)
 
 
-        s2 = self.pool1(x2)
-        s3 = self.pool2(x3)
-        s4 = self.pool3(x4)
+        s1 = self.pool1(x1)
+        s2 = self.pool2(x2)
+        s3 = self.pool3(x3)
 
-        multi_scale = tf.concat([s2, s3, s4], 1)
+        multi_scale = tf.concat([s1, s2, s3], 1)
 
-        keypoints_predict=self.head_keypoints(multi_scale,training=training)
+        kp_profile, kp_nose,kp_mouth, mouthcls=self.head_keypoints(multi_scale,training=training)
 
         head_pose_predict=self.head_pose(x2,training=training)
 
-        head_cls_predict = self.head_cls(x2, training=training)
 
-        res=tf.concat([keypoints_predict,head_pose_predict,head_cls_predict],axis=1)
 
-        return res
+        leyebow,leye,leyecls=self.left_eye(x2, training=training)
+        reyebow, reye, reyecls = self.left_eye(x2, training=training)
+
+
+
+
+
+        keypoints=tf.concat([kp_profile,leyebow,reyebow,kp_nose,leye,reye,kp_mouth,head_pose_predict,leyecls,reyecls,mouthcls],axis=1)
+
+
+
+        return keypoints
 
 
 
     @tf.function(input_signature=[tf.TensorSpec([None,cfg.MODEL.hin,cfg.MODEL.win,3], tf.float32)])
-    def inference(self,images):
-        inputs = self.preprocess(images)
-        x1,x2,x3,x4 = self.backbone(inputs, training=False)
-        print(x4)
-        s2 = self.pool1(x2)
-        s3 = self.pool2(x3)
-        s4 = self.pool3(x4)
+    def inference(self,inputs):
+        inputs = self.preprocess(inputs)
 
-        multi_scale = tf.concat([s2, s3, s4], 1)
+        x1, x2, x3 = self.backbone(inputs, training=False)
 
-        keypoints_predict = self.head_keypoints(multi_scale, training=False)
+        s1 = self.pool1(x1)
+        s2 = self.pool2(x2)
+        s3 = self.pool3(x3)
+
+        multi_scale = tf.concat([s1, s2, s3], 1)
+
+        kp_profile, kp_nose, kp_mouth, mouthcls = self.head_keypoints(multi_scale, training=False)
+
+        head_pose_predict = self.head_pose(x2, training=False)
+
+        leyebow, leye, leyecls = self.left_eye(x2, training=False)
+        reyebow, reye, reyecls = self.left_eye(x2, training=False)
+
+        keypoints = tf.concat(
+            [kp_profile, leyebow, reyebow, kp_nose, leye, reye, kp_mouth, head_pose_predict, leyecls, reyecls,
+             mouthcls], axis=1)
 
 
-        return keypoints_predict
-
-
+        print(keypoints.shape)
+        return keypoints
 
     def preprocess(self,image):
 
