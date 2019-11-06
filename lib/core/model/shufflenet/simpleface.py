@@ -181,7 +181,7 @@ class SimpleFace(tf.keras.Model):
         self.right_eye = OneEye(kernel_initializer=kernel_initializer)
 
 
-    @tf.function
+    #@tf.function
     def call(self, inputs, training=False):
         inputs=self.preprocess(inputs)
         x1, x2, x3 = self.backbone(inputs, training=training)
@@ -195,12 +195,14 @@ class SimpleFace(tf.keras.Model):
 
         kp_profile, kp_nose,kp_mouth, mouthcls=self.head_keypoints(multi_scale,training=training)
 
+
+
         head_pose_predict=self.head_pose(x2,training=training)
 
 
 
         leyebow,leye,leyecls=self.left_eye(x2, training=training)
-        reyebow, reye, reyecls = self.left_eye(x2, training=training)
+        reyebow, reye, reyecls = self.right_eye(x2, training=training)
 
 
 
@@ -231,7 +233,7 @@ class SimpleFace(tf.keras.Model):
         head_pose_predict = self.head_pose(x2, training=False)
 
         leyebow, leye, leyecls = self.left_eye(x2, training=False)
-        reyebow, reye, reyecls = self.left_eye(x2, training=False)
+        reyebow, reye, reyecls = self.right_eye(x2, training=False)
 
         keypoints = tf.concat(
             [kp_profile, leyebow, reyebow, kp_nose, leye, reye, kp_mouth, head_pose_predict, leyecls, reyecls,
@@ -263,6 +265,9 @@ if __name__=='__main__':
 
     image=np.zeros(shape=(1,160,160,3),dtype=np.float32)
     x=model.inference(image)
+
+
+
     #tf.saved_model.save(model,'./model/keypoints')
     start=time.time()
     for i in range(100):
